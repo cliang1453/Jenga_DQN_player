@@ -1,21 +1,24 @@
 import numpy as np
-from params import *
 import random
 from itertools import count
-import matplotlib.pyplot as plt
 # from ROS_reference.sim_stack import hasFallen
 
 def get_action_space(state):
+    
+    selected_piece = np.squeeze(np.argwhere(state[3:] == 1), axis=1)
+    place_piece = np.squeeze(np.argwhere(state[:3] == 0), axis=1)
 
-    selected_piece = numpy.where(state[3:] == 1)
-    place_piece = numpy.where(state[:3] == 0)
-    
     if len(place_piece) < 3:
-        place_piece.extend([-1, -2, -3])
-    
-    return [selected_piece, place_piece]
+        place_piece = np.append(place_piece, [-1, -2, -3])
+
+    return (selected_piece, place_piece)
 
 def simulate(state, action):
+
+    """
+        Input: current state, current action
+        Output: next state
+    """
     
     selected_piece, place_piece = action
     increase_height = False
@@ -30,47 +33,74 @@ def simulate(state, action):
     else:
         state[place_piece] = 1
 
-
     # interact with ROS environment
-    if hasFallen(state):
-        is_end = True
+    is_end = hasFallen(state)
 
-    return is_end, increase_height
+    return state, is_end, increase_height
 
-class JengaEnv:
+def hasFallen(state):
+
+    """
+        This is a primitive fall detection serving for testing purpose! 
+        TODO: add physical engine (interact with ROS)
+    """
+
+    state_T = state.reshape((-1, 3))
+
+    # check if there is all zero rows. Note that we always make sure the top row is no completely empty
+    checker = np.ones((state_T.shape[0], 1))
+    level_cnt = np.sum(state_T * checker, axis=1)
+    if np.count_nonzero(level_cnt) < state_T.shape[0]:
+        return True
+
+    # check if there is unbalance condition (i.e. 100 or 001) and there is no support on top of it
+    for idx in [0, 2]:
+        unbalance_levels = np.squeeze(np.argwhere(level_cnt == 1), axis=1)
+        unbalance_mask = (state_T[unbalance_levels, idx] == 1)
+        unbalance_levels = np.squeeze(np.argwhere(unbalance_mask * unbalance_levels > 0), axis=1)
+        
+        for level in unbalance_levels:
+            if level == 0:
+                continue
+            if level == 1:
+                return True
+            if state_T[level - 2][idx] == 0:
+                return True
+
+    return False
+
+
+class JengaEnv(object):
+    
     def __init__(self, args):
         self.args = args
-        self.state = np.ones(self.args.init_height * 3)
-        self.curr_height = 0
-        self.is_end = False
 
     def reset(self):
         self.state = np.ones(self.args.init_height * 3)
-        self.curr_height = 0
+        self.curr_height = self.args.init_height
         self.is_end = False
         
         return self.state, self.curr_height, self.is_end
 
     def step(self, action):
         # drop the block
-        self.is_end, increase_height= simulate(self.state, action)
+        self.state, self.is_end, increase_height = simulate(self.state, action)
         if increase_height:
             self.curr_height += 1
 
         return self.state, self.curr_height, self.is_end
 
-# def calc_reward(rows_cleared_prev, rows_cleared, is_end, reward_type="all"):
-#     if reward_type == "cleared":
-#         return (rows_cleared - rows_cleared_prev) * 5
-#     else:
-#         if is_end:
-#             reward = -10
-#         else:
-#             reward = 1 + (rows_cleared - rows_cleared_prev) * 5
-#         return reward
+def calc_reward(prev_height, curr_height, is_end):
+
+    if is_end:
+        reward = -10
+    else:
+        reward = 1 + (curr_height - prev_height) * 1
+        
+    return reward
 
 
-def test(args):
+def test_env(args):
     
     env = JengaEnv(args=args)
     state, curr_height, is_end = env.reset()
@@ -79,6 +109,7 @@ def test(args):
 
         if is_end:
             break
+
         # action_space: list of indices to pick
         action_space = get_action_space(state) 
         action = [np.random.choice(action_space[0]), np.random.choice(action_space[1])]
