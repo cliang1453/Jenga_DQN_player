@@ -71,7 +71,7 @@ class Policy:
 
         # epsilon greedy
         if (strategy == "epsilon_greedy" and random.random() < self.args.epsilon_g) or strategy == 'random':
-            action = [np.random.choice(action_space[0]), np.random.choice(action_space[1])]
+            action = action_space[np.random.choice(len(action_space))]
             return action
 
         qs = self.get_Qs(state, action_space, q_func=self.q_func).detach()
@@ -92,8 +92,10 @@ class Policy:
             state_sim, _, _ = simulate(state, action)
             state_sim = np.expand_dims(state_sim, axis=0).astype(float)
             state_sim_list.append(state_sim)
+            print(state_sim.shape)
 
         states_sim = np.stack(state_sim_list, axis=0)
+        print(states_sim)
         states_sim_var = self.to_variable(states_sim)
         Qs = q_func(states_sim_var)
 

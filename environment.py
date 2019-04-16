@@ -11,7 +11,11 @@ def get_action_space(state):
     if len(place_piece) < 3:
         place_piece = np.append(place_piece, [-1, -2, -3])
 
-    return (selected_piece, place_piece)
+    # a list of possible actions 
+    # action: [selected_piece, place_piece]
+    action_space = np.array(np.meshgrid(selected_piece, place_piece)).T.reshape(-1, 2)
+
+    return action_space
 
 def simulate(state, action):
 
@@ -19,24 +23,25 @@ def simulate(state, action):
         Input: current state, current action
         Output: next state
     """
-    
+    next_state = state.copy()
+
     selected_piece, place_piece = action
     increase_height = False
     is_end = False
 
     # if add to new level
-    state[selected_piece] = 0
+    next_state[selected_piece] = 0
     if place_piece < 0:
         increase_height = True
-        state = np.concatenate((np.zeros(3), state), axis=0)
-        state[place_piece + 3] = 1
+        next_state = np.concatenate((np.zeros(3), next_state), axis=0)
+        next_state[place_piece + 3] = 1
     else:
-        state[place_piece] = 1
+        next_state[place_piece] = 1
 
     # interact with ROS environment
-    is_end = hasFallen(state)
+    is_end = hasFallen(next_state)
 
-    return state, is_end, increase_height
+    return next_state, is_end, increase_height
 
 def hasFallen(state):
 
@@ -112,5 +117,5 @@ def test_env(args):
 
         # action_space: list of indices to pick
         action_space = get_action_space(state) 
-        action = [np.random.choice(action_space[0]), np.random.choice(action_space[1])]
+        action = action_space[np.random.choice(len(action_space))]
         state, curr_height, is_end = env.step(action)
