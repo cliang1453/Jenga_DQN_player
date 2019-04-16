@@ -13,14 +13,14 @@ class QFunc(nn.Module):
         self.fc5 = nn.Linear(256, 1)
 
     def forward(self, x):
-        print(x.shape)
+        #print(x.shape)
         x = F.relu(self.conv1(x))
-        print(x.shape)
+        #print(x.shape)
         x = F.relu(self.conv2(x))
-        print(x.shape)
+        #print(x.shape)
         x = F.relu(self.conv3(x))
-        print(x.shape)
+        #print(x.shape)
 
         x = F.relu(self.fc4(x.view(x.size(0), -1)))
-        print(x.shape)
+        #print(x.shape)
         return self.fc5(x)
