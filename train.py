@@ -4,6 +4,8 @@ import numpy as np
 import os
 import random
 from termcolor import colored
+from collections import deque 
+import pickle
 
 from environment import *
 from model import *
@@ -89,13 +91,14 @@ class Policy:
         state_sim_list = []
 
         for state, action in zip(states, actions):
-            state_sim, _, _ = simulate(state, action)
-            state_sim = np.expand_dims(state_sim, axis=0).astype(float)
-            state_sim_list.append(state_sim)
-            print(state_sim.shape)
+            state_sim, _, _ = simulate(state, action) 
+            state_sim = state_sim.reshape((-1, 3))
+            pad_len = self.args.init_height * 3 - state_sim.shape[0]
+            if pad_len != 0:
+                state_sim = np.pad(state_sim, ((pad_len,0), (0,0)), "constant", constant_values=(0, 0))
+            state_sim_list.append(np.expand_dims(state_sim, axis=0).astype(float))
 
         states_sim = np.stack(state_sim_list, axis=0)
-        print(states_sim)
         states_sim_var = self.to_variable(states_sim)
         Qs = q_func(states_sim_var)
 
@@ -135,6 +138,11 @@ class Policy:
         self.target_q_func.load_state_dict(self.q_func.state_dict())
 
     def save_params(self, episode=None):
+        
+        filename = os.path.join(self.args.save_dir)
+        if not os.path.isdir(filename):
+            os.mkdir(filename)
+
         if episode is not None:
             torch.save(self.q_func.state_dict(), os.path.join(self.args.save_dir, "mymodel_" + str((episode // self.args.save_interval) % 10) + ".pth"))
         else:
@@ -159,7 +167,7 @@ class Logger:
         self.reward_list = []
         self.reward_validation_list = []
         self.q_list = []
-        self.height_validation_list = []
+        self.height_list = []
 
     def add_loss(self, loss):
         self.loss_list.append(loss)
@@ -174,7 +182,7 @@ class Logger:
         self.q_list.append(q)
 
     def add_height(self, height):
-    	self.height_validation_list.append(height)
+    	self.height_list.append(height)
 
     def plot_loss(self):
         plt.figure('loss')
@@ -302,6 +310,7 @@ def train():
         reward_accum_list = []
         height_list = []
         max_avg_height = args.init_height
+        past_validation_steps_list = deque([])
 
         for game in range(args.num_games):
 
