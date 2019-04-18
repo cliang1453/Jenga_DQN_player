@@ -3,9 +3,9 @@ import random
 from itertools import count
 # from ROS_reference.sim_stack import hasFallen
 
-def get_action_space(state):
+def get_action_space(state, curr_height, max_height):
     
-    selected_piece = np.squeeze(np.argwhere(state[3:] == 1), axis=1)
+    selected_piece = np.squeeze(np.argwhere(state[(max_height - curr_height + 1) * 3:] == 1), axis=1) + 3
     place_piece = np.squeeze(np.argwhere(state[:3] == 0), axis=1)
 
     if len(place_piece) < 3:
@@ -81,7 +81,8 @@ class JengaEnv(object):
         self.args = args
 
     def reset(self):
-        self.state = np.ones(self.args.init_height * 3)
+        self.state = np.zeros(self.args.init_height * 3 *3)
+        self.state[:self.args.init_height * 3] = 1
         self.curr_height = self.args.init_height
         self.is_end = False
         
@@ -110,12 +111,25 @@ def test_env(args):
     env = JengaEnv(args=args)
     state, curr_height, is_end = env.reset()
     
-    for t in count():
+    # for t in count():
 
-        if is_end:
-            break
+    #     if is_end:
+    #         break
 
-        # action_space: list of indices to pick
-        action_space = get_action_space(state) 
-        action = action_space[np.random.choice(len(action_space))]
-        state, curr_height, is_end = env.step(action)
+    #     # action_space: list of indices to pick
+    state = np.array([[0, 1, 0],
+                      [0, 1, 1],
+                      [1, 1, 1],
+                      [1, 1, 1],
+                      [1, 1, 1],
+                      [1, 1, 1],
+                      [1, 1, 1],
+                      [1, 1, 1],
+                      [1, 1, 1],
+                      [1, 1, 1],
+                      [1, 1, 1]]).reshape(-1)
+
+    action_space = get_action_space(state, curr_height, max_height) 
+    print(action_space)
+    action = action_space[np.random.choice(len(action_space))]
+    state, curr_height, is_end = env.step(action)
