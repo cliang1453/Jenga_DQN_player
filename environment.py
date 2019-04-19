@@ -6,10 +6,10 @@ from itertools import count
 def get_action_space(state, curr_height, max_height):
     
     selected_piece = np.squeeze(np.argwhere(state[(max_height - curr_height + 1) * 3:] == 1), axis=1) + 3
-    place_piece = np.squeeze(np.argwhere(state[:3] == 0), axis=1)
+    place_piece = np.squeeze(np.argwhere(state[(max_height - curr_height + 1) * 3 - 3:(max_height - curr_height + 1) * 3] == 0), axis=1)
 
     if len(place_piece) < 3:
-        place_piece = np.append(place_piece, [-1, -2, -3])
+        place_piece = np.append(place_piece, state[(max_height - curr_height + 1) * 3 - 6: (max_height - curr_height + 1) * 3 - 3])
 
     # a list of possible actions 
     # action: [selected_piece, place_piece]
