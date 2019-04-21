@@ -9,7 +9,7 @@ class QFunc(nn.Module):
         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
-        self.fc4 = nn.Linear(64 * 28, 256)
+        self.fc4 = nn.Linear(1792, 256)
         self.fc5 = nn.Linear(256, 1)
 
     def forward(self, x):

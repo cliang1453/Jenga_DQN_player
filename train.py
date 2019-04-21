@@ -91,11 +91,8 @@ class Policy:
         state_sim_list = []
 
         for state, action in zip(states, actions):
-            state_sim, _, _ = simulate(state, action) 
-            state_sim = state_sim.reshape((-1, 3))
-            pad_len = self.args.init_height * 3 - state_sim.shape[0]
-            if pad_len != 0:
-                state_sim = np.pad(state_sim, ((pad_len,0), (0,0)), "constant", constant_values=(0, 0))
+            state_sim, _ = simulate(state, action) 
+            state_sim = state_sim[0].reshape((-1, 3))
             state_sim_list.append(np.expand_dims(state_sim, axis=0).astype(float))
 
         states_sim = np.stack(state_sim_list, axis=0)
@@ -328,9 +325,10 @@ def train():
             for t in count():
                 
                 state = env.state
-                prev_height = env.curr_height
+                prev_height = state[1]
 
                 if (strategy == "epsilon_greedy" and t < epsilon_greedy_start) or (strategy == "validation"):
+                    print()
                     action = policy.take_action(state, "validation")
                 else:
                     action = policy.take_action(state, strategy)
@@ -394,5 +392,4 @@ def train():
 
 
 if __name__ == "__main__":
-	args = parse_args()
 	train()
