@@ -3,54 +3,67 @@ import random
 from itertools import count
 # from ROS_reference.sim_stack import hasFallen
 
-def get_action_space(state, curr_height, max_height):
-    
-    selected_piece = np.squeeze(np.argwhere(state[(max_height - curr_height + 1) * 3:] == 1), axis=1) + 3
-    place_piece = np.squeeze(np.argwhere(state[(max_height - curr_height + 1) * 3 - 3:(max_height - curr_height + 1) * 3] == 0), axis=1)
+def get_action_space(state):
+
+    s, curr_height = state
+    max_height = int(s.shape[0]/3)
+
+    selected_piece = np.squeeze(np.argwhere(s[-curr_height*3:] == 1), axis=1) + (max_height-curr_height)*3
+    print(selected_piece)
+    place_piece = np.squeeze(np.argwhere(s[(max_height - curr_height + 1) * 3 - 3:(max_height - curr_height + 1) * 3] == 0), axis=1)\
+                  + (max_height - curr_height + 1) * 3 - 3
+
 
     if len(place_piece) < 3:
-        place_piece = np.append(place_piece, state[(max_height - curr_height + 1) * 3 - 6: (max_height - curr_height + 1) * 3 - 3])
+        new_level = np.squeeze(np.argwhere(s[(max_height - curr_height + 1) * 3 - 6: (max_height - curr_height + 1) * 3 - 3] == 0), axis=1)\
+         + (max_height - curr_height + 1) * 3 - 6
+        place_piece = np.append(place_piece, new_level)
 
+    print(place_piece)
     # a list of possible actions 
     # action: [selected_piece, place_piece]
-    action_space = np.array(np.meshgrid(selected_piece, place_piece)).T.reshape(-1, 2)
+    action_space = np.array(np.meshgrid(selected_piece, place_piece), dtype=int).T.reshape(-1, 2)
 
     return action_space
 
 def simulate(state, action):
 
     """
-        Input: current state, current action
-        Output: next state
-    """
-    next_state = state.copy()
+        Input: 
+        state: field, curr_height
+        action: selected_piece, place_piece
 
+        Output: 
+        next_state: next_field, next_height
+
+    """
+    next_s, next_h = state[0].copy(), state[1]
     selected_piece, place_piece = action
-    increase_height = False
     is_end = False
+    print(selected_piece)
 
     # if add to new level
-    next_state[selected_piece] = 0
-    if place_piece < 0:
-        increase_height = True
-        next_state = np.concatenate((np.zeros(3), next_state), axis=0)
-        next_state[place_piece + 3] = 1
+    next_s[selected_piece] = 0
+    if place_piece < (state[0].shape[0]/3-state[1])*3:
+        next_h += 1
+        next_s[place_piece] = 1
     else:
-        next_state[place_piece] = 1
+        next_s[place_piece] = 1
 
     # interact with ROS environment
-    is_end = hasFallen(next_state)
+    is_end = hasFallen(next_s, next_h)
+    next_state = (next_s, next_h)
 
-    return next_state, is_end, increase_height
+    return next_state, is_end
 
-def hasFallen(state):
+def hasFallen(state, curr_height):
 
     """
         This is a primitive fall detection serving for testing purpose! 
         TODO: add physical engine (interact with ROS)
     """
 
-    state_T = state.reshape((-1, 3))
+    state_T = state.reshape((-1, 3))[-curr_height:]
 
     # check if there is all zero rows. Note that we always make sure the top row is no completely empty
     checker = np.ones((state_T.shape[0], 1))
@@ -81,20 +94,19 @@ class JengaEnv(object):
         self.args = args
 
     def reset(self):
-        self.state = np.zeros(self.args.init_height * 3 *3)
-        self.state[:self.args.init_height * 3] = 1
-        self.curr_height = self.args.init_height
+        
+        s = np.zeros(self.args.init_height * 3 *3)
+        s[-self.args.init_height * 3:] = 1
+        self.state = (s, self.args.init_height)
         self.is_end = False
         
-        return self.state, self.curr_height, self.is_end
+        return self.state, self.is_end
 
     def step(self, action):
         # drop the block
-        self.state, self.is_end, increase_height = simulate(self.state, action)
-        if increase_height:
-            self.curr_height += 1
+        self.state, self.is_end = simulate(self.state, action)
 
-        return self.state, self.curr_height, self.is_end
+        return self.state[0], self.state[1], self.is_end
 
 def calc_reward(prev_height, curr_height, is_end):
 
@@ -109,27 +121,30 @@ def calc_reward(prev_height, curr_height, is_end):
 def test_env(args):
     
     env = JengaEnv(args=args)
-    state, curr_height, is_end = env.reset()
+    state, is_end = env.reset()
+    print(state[0].reshape((-1, 3)))
+    for t in count():
+
+        if is_end:
+            print(is_end)
+            break
+        # action_space: list of indices to pick
+    # state = (np.array([[0, 1, 0],
+    #                   [0, 1, 1],
+    #                   [1, 1, 1],
+    #                   [1, 1, 1],
+    #                   [1, 1, 1],
+    #                   [1, 1, 1],
+    #                   [1, 1, 1],
+    #                   [1, 1, 1],
+    #                   [1, 1, 1],
+    #                   [1, 1, 1],
+    #                   [1, 1, 1]]).reshape(-1)
+
     
-    # for t in count():
-
-    #     if is_end:
-    #         break
-
-    #     # action_space: list of indices to pick
-    state = np.array([[0, 1, 0],
-                      [0, 1, 1],
-                      [1, 1, 1],
-                      [1, 1, 1],
-                      [1, 1, 1],
-                      [1, 1, 1],
-                      [1, 1, 1],
-                      [1, 1, 1],
-                      [1, 1, 1],
-                      [1, 1, 1],
-                      [1, 1, 1]]).reshape(-1)
-
-    action_space = get_action_space(state, curr_height, max_height) 
-    print(action_space)
-    action = action_space[np.random.choice(len(action_space))]
-    state, curr_height, is_end = env.step(action)
+        action_space = get_action_space(state)
+        
+        action = action_space[np.random.choice(len(action_space))]
+        s, curr_height, is_end = env.step(action)
+        print(s.reshape((-1,3)))
+        state = (s, curr_height)
