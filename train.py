@@ -7,8 +7,7 @@ from termcolor import colored
 from collections import deque 
 import pickle
 
-from testing import * 
-# from environment import *
+from environment import *
 from model import *
 import torch
 import torch.optim as optim
@@ -18,7 +17,7 @@ from torch.autograd import Variable
 def parse_args():
     
     parser = argparse.ArgumentParser("Jenga DQN player")
-    parser.add_argument("--init-height", type=int, default=10, help="the initial height of tower")
+    parser.add_argument("--init-height", type=int, default=2, help="the initial height of tower")
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate")
     parser.add_argument("--alpha", type=float, default=0.95, help="alpha")
     parser.add_argument("--eps", type=float, default=0.01, help="eps")
@@ -45,10 +44,10 @@ class Policy:
         
         self.args = args
         self.logger = args.logger
-        dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+        self.dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 
-        self.q_func = QFunc(args).type(dtype)
-        self.target_q_func = QFunc(args).type(dtype)
+        self.q_func = QFunc(args).type(self.dtype)
+        self.target_q_func = QFunc(args).type(self.dtype)
         self.optimizer = optim.RMSprop(self.q_func.parameters(), lr=args.lr, alpha=args.alpha, eps=args.eps)
 
     def to_variable(self, array_in):
@@ -73,7 +72,7 @@ class Policy:
 
         # epsilon greedy
         if (strategy == "epsilon_greedy" and random.random() < self.args.epsilon_g) or strategy == 'random':
-            action = np.random.choice(state.shape[0])
+            action = np.random.choice(np.argwhere(state==1).squeeze())
             return action
 
         qs = self.get_Qs(state, q_func=self.q_func).detach()
@@ -120,15 +119,18 @@ class Policy:
         return dir_map
 
 
-    def get_Qs(self, states, q_func):
+    def get_Qs(self, states, q_func, single=True):
 
         state_list = []
         state_mask_list = []
         state_valididx_list = []
 
+        if single:
+            states = np.expand_dims(states, axis=0)
+ 
         for state in states:
 
-            state_ = state.reshape((-1, 3)) #[len(state_space)/3, 3]
+            state_ = state.reshape(-1, 3) #[len(state_space)/3, 3]
 
             # state_mask: 1: valid index, 0: invalid index 
             state_mask = self.get_mask(state) #[len(state_space)]
@@ -139,14 +141,28 @@ class Policy:
             state_list.append(state_)
             state_mask_list.append(state_mask)
 
-        states_ = np.stack(state_list, axis=0) #[batch_size, 2, len(state_space)/3, 3]
-        state_masks = np.stack(state_mask_list, axis=0) #[batch_size, len(state_space)]
-        states_var = self.to_variable(states_var)
+        states_ = np.vstack(state_list) #[batch_size, 2, len(state_space)/3, 3]
+        state_masks = np.vstack(state_mask_list) #[batch_size, len(state_space)]
+        states_var = self.to_variable(states_)
         Qs = q_func(states_var) # [batch_size, len(state_space)]
         
         # renormalization
-        norm_Q = Qs/np.expand_dims(np.sum(Qs * state_masks, axis=1), axis=1) # [batch_size, len(state_space)]
-        norm_masked_Q = norm_Q * state_masks # [batch_size, len(state_space)]
+        if single:
+            # print(Qs)
+            # print(torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")))
+            # print(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")))
+            # print(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))))
+            # print(Qs/torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))))
+
+            norm_Q = Qs/torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))) # [batch_size, len(state_space)]
+            
+
+            norm_masked_Q = norm_Q * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")) # [batch_size, len(state_space)]
+            # print(norm_masked_Q.shape)
+        else:
+            norm_Q = Qs/torch.unsqueeze(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")), dim=1), dim=1) # [batch_size, len(state_space)]
+
+
 
         return norm_masked_Q
 
@@ -162,6 +178,7 @@ class Policy:
             else:
                 qs = self.get_Qs(next_states[i], q_func=self.target_q_func).detach()
                 max_q = np.asscalar(np.amax(self.get_data(qs)))
+                print(max_q)
                 ys.append(rewards[i] + self.args.gamma * max_q)
 
         # compute Q
@@ -372,7 +389,7 @@ def train():
                     action = policy.take_action(state, strategy)
 
                 next_state, is_end = env.step(action)
-                reward = env.test_get_reward(next_state, is_end)
+                reward = env.get_reward(next_state, is_end)
                 reward_accum += reward
 
                 if strategy == "random" or (strategy == "epsilon_greedy" and t >= epsilon_greedy_start):
@@ -380,7 +397,7 @@ def train():
 
                 if is_end:
                     print_str = "=" * 20 + " Episode " + str(episode) + "\tGame " + str(game) + " " + strategy + " " + "=" * 20 + " curr_height/max_height: " \
-                                + str(np.argwhere(new_state==1)) + "/" + str(new_state.shape[0]) + "\tsample_t/total_t: " + str(epsilon_greedy_start) + "/" + str(t)
+                                + str(np.argwhere(next_state==1)) + "/" + str(next_state.shape[0]) + "\tsample_t/total_t: " + str(epsilon_greedy_start) + "/" + str(t)
                     print(colored(print_str, 'red'))
 
                     reward_accum_list.append(reward_accum)
@@ -392,10 +409,6 @@ def train():
                     break
 
         if strategy == "validation":
-            if np.average(reward_list) > max_avg_reward:
-                print("saving new best policy")
-                policy.save_params()
-                max_avg_reward = np.average(reward_list)
             policy.save_params(episode)
 
         if strategy != "random":
@@ -426,4 +439,6 @@ def train():
 
 
 if __name__ == "__main__":
-	train()
+    train()
+    # args = parse_args()
+    # test_env(args)
