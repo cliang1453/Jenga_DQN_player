@@ -50,7 +50,7 @@ class JengaEnv(object):
     
     def has_fallen(self, state):
         
-        state_ = state.reshape((-1, 3))
+        state_ = state.reshape(-1, 3)
         # print(state_)
 
         # idx_list: the list of index that are blocks
@@ -160,22 +160,36 @@ class JengaEnv(object):
         return False
         
 
-    def get_reward(self, state, is_end):
+    def get_reward(self, state, is_end, t):
         
-        mask = [0,1,0]
-        reward = 0
+        # mask = [0,1,0]
+        # reward = 0
         
 
-        if is_end == 0:
+        # if is_end == 0:
             
-            reward += 1
-            for i in range(0,len(state),3):
-                if (mask==state[i:i+3]).all(): reward += 1
+        #     reward += 5
+        #     for i in range(0,len(state),3):
+        #         if (mask==state[i:i+3]).all(): reward += 2
 
-        elif is_end == 1:
-            reward += self.reward
-        else:
-            reward += self.cost
+        # elif is_end == 1:
+        #     reward += self.reward
+        # else:
+        #     reward += self.cost
+
+        mask_pos = [0,1,0]
+        mask_neg = [1,0,1]
+        reward = t
+
+        if is_end == 2:
+           return self.cost
+        if (state==self.goal).all():
+           return self.reward
+        for i in range(0,len(state),3):
+           if (mask_pos==state[i:i+3]).all(): reward += 2
+           if (mask_neg==state[i:i+3]).all(): reward -= 2
+        return reward
+
         
         return reward
 
