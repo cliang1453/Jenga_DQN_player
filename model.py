@@ -20,4 +20,4 @@ class QFunc(nn.Module):
         x = F.relu(self.conv3(x))
         # print(x.shape)
         # x = F.relu(self.fc4(x.view(x.size(0), -1)))
-        return F.relu(self.fc4(x.view(x.size(0), -1)))
+        return self.fc4(x.view(x.size(0), -1))

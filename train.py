@@ -75,8 +75,14 @@ class Policy:
             action = np.random.choice(np.argwhere(state==1).squeeze())
             return action
 
+        if strategy == 'validation':
+            print(state)
+        
         qs = self.get_Qs(state, q_func=self.q_func).detach()
         qs = self.get_data(qs)
+
+        if strategy == 'validation':
+            print(qs)
 
         max_action = np.argmax(qs)
         return max_action
@@ -85,13 +91,13 @@ class Policy:
         
         i = 0
         # Locate the top layer of the tower
-        while i < len(state) and sum(state[i:i+3]) == 0:
+        while i < len(state) and np.sum(state[i:i+3]) == 0:
             i += 3
         # Break if unable to locate
         if i >= len(state):
             return None, None
         # If the top layer is filled, then we can choose any piece other than the top layer
-        if sum(state[i:i + 3]) == 3:
+        if np.sum(state[i:i + 3]) == 3:
             i += 3
         # Otherwise, we can choose any piece other than the top two layers
         else:
@@ -119,7 +125,7 @@ class Policy:
         return dir_map
 
 
-    def get_Qs(self, states, q_func, single=True):
+    def get_Qs(self, states, q_func, single = True):
 
         state_list = []
         state_mask_list = []
@@ -145,9 +151,10 @@ class Policy:
         state_masks = np.vstack(state_mask_list) #[batch_size, len(state_space)]
         states_var = self.to_variable(states_)
         Qs = q_func(states_var) # [batch_size, len(state_space)]
-        
+
         # renormalization
         if single:
+            
             # print(Qs)
             # print(torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")))
             # print(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")))
@@ -155,14 +162,21 @@ class Policy:
             # print(Qs/torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))))
 
             norm_Q = Qs/torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))) # [batch_size, len(state_space)]
-            
-
-            norm_masked_Q = norm_Q * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")) # [batch_size, len(state_space)]
-            # print(norm_masked_Q.shape)
         else:
+
+            # print(Qs.shape)
+            # print(torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")).shape)
+            # print(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")))
+            # print(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")), dim=1).shape)
+            # print(Qs/torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))))
+
             norm_Q = Qs/torch.unsqueeze(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")), dim=1), dim=1) # [batch_size, len(state_space)]
 
+        # print(norm_Q)
 
+        norm_masked_Q = norm_Q * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")) # [batch_size, len(state_space)]
+
+        # print(norm_masked_Q)
 
         return norm_masked_Q
 
@@ -178,12 +192,11 @@ class Policy:
             else:
                 qs = self.get_Qs(next_states[i], q_func=self.target_q_func).detach()
                 max_q = np.asscalar(np.amax(self.get_data(qs)))
-                print(max_q)
                 ys.append(rewards[i] + self.args.gamma * max_q)
 
         # compute Q
         loss = 0
-        Qs = self.get_Qs(states, q_func=self.q_func)
+        Qs = self.get_Qs(states, single=False, q_func=self.q_func)
         ys_var = self.to_variable(np.array(ys)).view(-1, 1)
         loss = torch.sum((Qs - ys_var) ** 2) / self.args.batch_size
 
@@ -368,6 +381,7 @@ def train():
 
         for game in range(args.num_games):
 
+
             env.reset()
             reward_accum = 0
             epsilon_greedy_start = 0  # initialize to 0 : do exploration first
@@ -385,6 +399,7 @@ def train():
 
                 if (strategy == "epsilon_greedy" and t < epsilon_greedy_start) or (strategy == "validation"):
                     action = policy.take_action(state, "validation")
+                    print(action)
                 else:
                     action = policy.take_action(state, strategy)
 
@@ -407,6 +422,10 @@ def train():
                         if len(past_validation_steps_list) > 10:
                             past_validation_steps_list.popleft()
                     break
+
+                
+                
+                
 
         if strategy == "validation":
             policy.save_params(episode)
