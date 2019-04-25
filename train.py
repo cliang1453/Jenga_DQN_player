@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--learning-start", type=int, default=100, help="learning start after number of episodes")
     parser.add_argument("--num_target_update_iter", type=int, default=1, help="number of iterations to update target Q")
     parser.add_argument("--sample_t", type=bool, default=False, help="sample t by max")
-
+    parser.add_argument("--use-dir-info", type=bool, default=True, help="use direction information")
     args = parser.parse_args()
     return args
 
@@ -141,7 +141,10 @@ class Policy:
             # state_mask: 1: valid index, 0: invalid index 
             state_mask = self.get_mask(state) #[len(state_space)]
 
-            state_ = np.stack([state_, self.get_direction_info(state_)]) #[2, len(state_space)/3, 3]
+            if self.args.use_dir_info:
+                state_ = np.stack([state_, self.get_direction_info(state_)]) #[2, len(state_space)/3, 3]
+            else:
+                state_ = np.expand_dims(state_, axis=0).astype(float)
             state_ = np.expand_dims(state_, axis=0).astype(float) #[1, 2, len(state_space)/3, 3]
             
             state_list.append(state_)
@@ -310,7 +313,7 @@ class ReplayBuffer:
         indices = np.random.choice(self.get_size(), num_samples, replace=False)
         sampled_states = [self.state_list[i] for i in indices]
         sampled_actions = [self.action_list[i] for i in indices]
-        sampled_next_state = [self.state_list[self.rel_index(i + 1)] if not self.is_end_list[i] else None for i in indices]
+        sampled_next_state = [self.state_list[self.rel_index(i + 1)] if self.is_end_list[i]==0 else None for i in indices]
         sampled_rewards = [self.reward_list[i] for i in indices]
         sampled_is_end = [self.is_end_list[i] for i in indices]
         return [sampled_states, sampled_actions, sampled_next_state, sampled_rewards, sampled_is_end]
@@ -361,6 +364,7 @@ def train():
     replay_buffer = ReplayBuffer(args)
     env = JengaEnv(args)
 
+
     for episode in range(args.num_episodes):
 
         if episode < args.learning_start:
@@ -375,6 +379,7 @@ def train():
         reward_accum_list = []
         max_avg_reward = 0
         past_validation_steps_list = deque([])
+        max_height = args.init_height * 3
 
         for game in range(args.num_games):
 
@@ -410,11 +415,13 @@ def train():
                     replay_buffer.add(state, action, reward, is_end)
 
                 if is_end > 0:
+                    max_height = max(max_height, next_state.shape[0] - np.argwhere(next_state==1).squeeze()[0])
                     print_str = "=" * 20 + " Episode " + str(episode) + "\tGame " + str(game) + " " + strategy + " " + "=" * 20 + " curr_height/max_height: " \
-                                + str(next_state) + "/" + str(next_state.shape[0]) + "\tsample_t/total_t: " + str(epsilon_greedy_start) + "/" + str(t)
+                                + str(max_height) + "/" + str(next_state.shape[0]) + "\tsample_t/total_t: " + str(epsilon_greedy_start) + "/" + str(t)
                     print(colored(print_str, 'red'))
 
                     reward_accum_list.append(reward_accum)
+                    
 
                     if strategy == "validation":
                         past_validation_steps_list.append(t)
