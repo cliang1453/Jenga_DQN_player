@@ -15,21 +15,16 @@ class JengaEnv(object):
     def reset(self):
         self.state = np.zeros((self.height*3-2)*3)
         self.state[-self.height*3:] = 1
-        self.is_end = False
+        self.is_end = 0
         
         return self.state, self.is_end
 
     def step(self, action):
         # drop the block
-        self.state, flag = self.simulate(self.state, action)
+        self.state, self.is_end = self.simulate(self.state, action)
         # is_end: 0: continue
         # 1: goal state
         # 2: fallen state
-        if flag > 0: 
-            self.is_end = True
-        else:
-            self.is_end = False
-
         return self.state, self.is_end
 
     def simulate(self, state, action):
@@ -72,8 +67,6 @@ class JengaEnv(object):
 
                 level_pos.append([])
                 last_y = y
-
-
 
             if y%2 == 0:
                 level_pos[-1].append([x, 1])
@@ -118,13 +111,19 @@ class JengaEnv(object):
         
         mask = [0,1,0]
         reward = 0
-        for i in range(0,len(state),3):
-            if (mask==state[i:i+3]).all(): reward += 1
+        
 
-        if not is_end:
-            if (state==self.goal).all(): reward += self.reward
-            return reward
-        reward += self.cost
+        if is_end == 0:
+            
+            reward += 1
+            for i in range(0,len(state),3):
+                if (mask==state[i:i+3]).all(): reward += 1
+
+        elif is_end == 1:
+            reward += self.reward
+        else:
+            reward += self.cost
+        
         return reward
 
 
