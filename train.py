@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument("--num_target_update_iter", type=int, default=1, help="number of iterations to update target Q")
     parser.add_argument("--sample_t", type=bool, default=False, help="sample t by max")
     parser.add_argument("--use-dir-info", type=bool, default=True, help="use direction information")
+    parser.add_argument("--use-heuristics", type=bool, default=True, help="use direction information")
     args = parser.parse_args()
     return args
 
@@ -46,8 +47,13 @@ class Policy:
         self.logger = args.logger
         self.dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 
-        self.q_func = QFunc(args).type(self.dtype)
-        self.target_q_func = QFunc(args).type(self.dtype)
+        if args.use_heuristics:
+            self.q_func = QFunc_Heuristics(args).type(self.dtype)
+            self.target_q_func = QFunc_Heuristics(args).type(self.dtype)
+        else:
+            self.q_func = QFunc(args).type(self.dtype)
+            self.target_q_func = QFunc(args).type(self.dtype)
+
         self.optimizer = optim.RMSprop(self.q_func.parameters(), lr=args.lr, alpha=args.alpha, eps=args.eps)
 
     def to_variable(self, array_in):
@@ -124,12 +130,34 @@ class Policy:
         dir_map[dir1_level] = 1
         return dir_map
 
+    def compute_heuristics(self, state):
+
+        zero_center_level = 0
+        one_center_level = 0
+
+        for i in range(0,len(state),3):
+
+            if state[i:i+3][1] == 0 and (state[i:i+3] != [0, 0, 0]).all():
+                if state[i:i+3][0] == 0 or state[i:i+3][1] == 0:
+                    zero_center_level += 2 * i
+                else:
+                    zero_center_level += 1 * i
+
+            if (state[i:i+3] == [0, 1, 0]).all():
+                one_center_level += 1 * (len(state)/3-i)
+
+
+        feature = np.array([zero_center_level, one_center_level])
+        return feature
+
+
 
     def get_Qs(self, states, q_func, single = True):
 
         state_list = []
         state_mask_list = []
         state_valididx_list = []
+        feature_list = []
 
         if single:
             states = np.expand_dims(states, axis=0)
@@ -140,6 +168,10 @@ class Policy:
 
             # state_mask: 1: valid index, 0: invalid index 
             state_mask = self.get_mask(state) #[len(state_space)]
+            
+            if self.args.use_heuristics:
+                feature = self.compute_heuristics(state)
+
 
             if self.args.use_dir_info:
                 state_ = np.stack([state_, self.get_direction_info(state_)]) #[2, len(state_space)/3, 3]
@@ -149,11 +181,21 @@ class Policy:
             
             state_list.append(state_)
             state_mask_list.append(state_mask)
+            if self.args.use_heuristics:
+                feature_list.append(feature) #[batch_size, 2]
 
         states_ = np.vstack(state_list) #[batch_size, 2, len(state_space)/3, 3]
         state_masks = np.vstack(state_mask_list) #[batch_size, len(state_space)]
         states_var = self.to_variable(states_)
-        Qs = q_func(states_var) # [batch_size, len(state_space)]
+
+        if self.args.use_heuristics:
+            features = np.vstack(feature_list) #[batch_size, 2]
+            feature_var = self.to_variable(features)
+
+        if self.args.use_heuristics:
+            Qs = q_func(states_var, feature_var) # [batch_size, len(state_space)]
+        else:
+            Qs = q_func(states_var)
 
         # renormalization
         if single:
@@ -364,6 +406,8 @@ def train():
     replay_buffer = ReplayBuffer(args)
     env = JengaEnv(args)
 
+    max_avg_reward = 0
+    max_t = 0
 
     for episode in range(args.num_episodes):
 
@@ -377,7 +421,6 @@ def train():
 
         # collect data
         reward_accum_list = []
-        max_avg_reward = 0
         past_validation_steps_list = deque([])
         max_height = args.init_height * 3
 
@@ -408,7 +451,7 @@ def train():
 
 
                 next_state, is_end = env.step(action)
-                reward = env.get_reward(next_state, is_end)
+                reward = env.get_reward(next_state, is_end, t)
                 reward_accum += reward
 
                 if strategy == "random" or (strategy == "epsilon_greedy" and t >= epsilon_greedy_start):
@@ -416,8 +459,9 @@ def train():
 
                 if is_end > 0:
                     max_height = max(max_height, next_state.shape[0] - np.argwhere(next_state==1).squeeze()[0])
+                    max_t = max(max_t, t)
                     print_str = "=" * 20 + " Episode " + str(episode) + "\tGame " + str(game) + " " + strategy + " " + "=" * 20 + " curr_height/max_height: " \
-                                + str(max_height) + "/" + str(next_state.shape[0]) + "\tsample_t/total_t: " + str(epsilon_greedy_start) + "/" + str(t)
+                                + str(max_height) + "/" + str(next_state.shape[0]) + "\tcurr_t/max_t: " + str(t) + "/" + str(max_t)
                     print(colored(print_str, 'red'))
 
                     reward_accum_list.append(reward_accum)
