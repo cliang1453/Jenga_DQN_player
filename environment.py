@@ -51,21 +51,30 @@ class JengaEnv(object):
     def has_fallen(self, state):
         
         state_ = state.reshape((-1, 3))
+        # print(state_)
+
+        # idx_list: the list of index that are blocks
+        # larger y -> bottom
+        # smaller y -> top
         idx_list = np.argwhere(state_ == 1)
 
+        # level_pos: [height of tower, number of blocks at current level] (indexing)
+        # larger index -> top
+        # smaller index -> bottom
         level_pos = []
         last_y = state_.shape[0]
 
+
+        # loop through bottom to top of the tower
         for i in range(idx_list.shape[0]-1, -1, -1):
             y, x = idx_list[i]
 
             if y != last_y:
 
-
                 if y < last_y-1:
                     return True
 
-                level_pos.append([])
+                level_pos.append([y])
                 last_y = y
 
             if y%2 == 0:
@@ -73,30 +82,74 @@ class JengaEnv(object):
             else:
                 level_pos[-1].append([1, x])
 
+        # print(level_pos)
+
+        # the prefix sum of the mass higher or equal to current level of the tower
+        # larger index -> bottom
+        # smaller index -> top
         level_mass = []
+
+        # the prefix sum of the number of blocks higher or equal to current level of the tower
+        # larger index -> bottom
+        # smaller index -> top
         level_block_cnt = []
+
+        # the mass centrod position of all blocks higher or equal to current level of the tower
+        # larger index -> bottom
+        # smaller index -> top
         level_mass_centroid =[]
         
+        # loop through top to bottom of the tower
         for level in level_pos[::-1]:
             
             if len(level_mass)==0:
 
-                level_mass.append(np.sum(np.array(level), axis=0))
-                level_block_cnt.append(len(level))
+                level_mass.append(np.sum(np.array(level[1:]), axis=0))
+                level_block_cnt.append(len(level[1:]))
             else:
 
-                level_mass.append(level_mass[-1] + np.sum(np.array(level), axis=0))
-                level_block_cnt.append(level_block_cnt[-1] + len(level))
+                level_mass.append(level_mass[-1] + np.sum(np.array(level[1:]), axis=0))
+                level_block_cnt.append(level_block_cnt[-1] + len(level[1:]))
+
+        # print(level_mass)
+        # print(level_block_cnt)
+        # print(level_mass_centroid)
 
         for i in range(len(level_block_cnt)):
             level_mass_centroid.append(level_mass[i]/level_block_cnt[i])
 
-        for i in range(len(level_mass_centroid)-1):
-            cy, cx = level_mass_centroid[i]
-            dy, dx = level_mass_centroid[i+1]
 
-            if abs(dy-cy) > 1 or abs(cx-dx) > 1:
-                return True
+        for i in range(len(level_pos)-1):
+            
+            cx, cy = level_mass_centroid[i]
+            level = level_pos[::-1][i+1]
+
+            # print(cy)
+            # print(cx)
+            # print(level)
+
+            
+            # CASE I: the centroid above the current level lying on one block of current level
+            if level[0]%2 == 0:
+                # print(np.amax(np.array(level[1:]), axis=0)[0])
+                # print(np.amin(np.array(level[1:]), axis=0)[0])
+                if cx > np.amax(np.array(level[1:]), axis=0)[0] + 0.5 or cx < np.amin(np.array(level[1:]), axis=0)[0] - 0.5:
+                    return True
+            else:
+                # print(np.amax(np.array(level[1:]), axis=0)[1])
+                # print(np.amin(np.array(level[1:]), axis=0)[1])
+                if cy > np.amax(np.array(level[1:]), axis=0)[1] + 0.5 or cy < np.amin(np.array(level[1:]), axis=0)[1] - 0.5:
+                    return True
+
+            # # CASE II: the centroid above the current level lying on the centroid of current level though there is no block below it
+            # dy, dx = np.sum(np.array(level[1:]), axis=0)/len(level[1:])
+            # print(dy)
+            # print(dx)
+            # print(cy)
+            # print(cx)
+            # print('=====')
+            # if abs(dy-cy) < 1 and abs(cx-dx) < 1:
+            #     return False
 
         return False
 
@@ -137,8 +190,7 @@ def test_env(args):
         if is_end:
             break
 
-        print(state.reshape(-1, 3))
-
+        # print(state.reshape(-1, 3))
         action = np.random.choice(np.argwhere(state==1).squeeze())
-        print(action)
+        # print(action)
         state, is_end = env.step(action)
