@@ -17,14 +17,14 @@ from torch.autograd import Variable
 def parse_args():
     
     parser = argparse.ArgumentParser("Jenga DQN player")
-    parser.add_argument("--init-height", type=int, default=2, help="the initial height of tower")
+    parser.add_argument("--init-height", type=int, default=10, help="the initial height of tower")
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate")
     parser.add_argument("--alpha", type=float, default=0.95, help="alpha")
     parser.add_argument("--eps", type=float, default=0.01, help="eps")
     parser.add_argument("--epsilon-g", type=float, default=0.1, help="epsilon greedy")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
     parser.add_argument("--num-games", type=int, default=10, help="number of games")
-    parser.add_argument("--batch-size", type=int, default=32, help="number of games")
+    parser.add_argument("--batch-size", type=int, default=128, help="number of games")
     parser.add_argument("--save-dir", type=str, default="log", help="directory to save policy and plots")
     parser.add_argument("--save-interval", type=int, default=10, help="interval to save validation plots")
     parser.add_argument("--gamma", type=float, default=0.99, help="discount factor")
@@ -75,14 +75,14 @@ class Policy:
             action = np.random.choice(np.argwhere(state==1).squeeze())
             return action
 
-        if strategy == 'validation':
-            print(state)
+        # if strategy == 'validation':
+        #     print(state)
         
         qs = self.get_Qs(state, q_func=self.q_func).detach()
         qs = self.get_data(qs)
 
-        if strategy == 'validation':
-            print(qs)
+        # if strategy == 'validation':
+        #     print(qs)
 
         max_action = np.argmax(qs)
         return max_action
@@ -166,17 +166,14 @@ class Policy:
 
             # print(Qs.shape)
             # print(torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")).shape)
-            # print(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")))
+            # print(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")).shape)
             # print(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")), dim=1).shape)
-            # print(Qs/torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))))
 
             norm_Q = Qs/torch.unsqueeze(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")), dim=1), dim=1) # [batch_size, len(state_space)]
 
-        # print(norm_Q)
+            # print(norm_Q.shape)
 
         norm_masked_Q = norm_Q * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")) # [batch_size, len(state_space)]
-
-        # print(norm_masked_Q)
 
         return norm_masked_Q
 
@@ -187,7 +184,7 @@ class Policy:
         ys = []
 
         for i in range(self.args.batch_size):
-            if is_ends[i]:
+            if is_ends[i] > 0:
                 ys.append(rewards[i])
             else:
                 qs = self.get_Qs(next_states[i], q_func=self.target_q_func).detach()
@@ -402,6 +399,8 @@ def train():
                     print(action)
                 else:
                     action = policy.take_action(state, strategy)
+                    
+
 
                 next_state, is_end = env.step(action)
                 reward = env.get_reward(next_state, is_end)
@@ -410,9 +409,9 @@ def train():
                 if strategy == "random" or (strategy == "epsilon_greedy" and t >= epsilon_greedy_start):
                     replay_buffer.add(state, action, reward, is_end)
 
-                if is_end:
+                if is_end > 0:
                     print_str = "=" * 20 + " Episode " + str(episode) + "\tGame " + str(game) + " " + strategy + " " + "=" * 20 + " curr_height/max_height: " \
-                                + str(np.argwhere(next_state==1)) + "/" + str(next_state.shape[0]) + "\tsample_t/total_t: " + str(epsilon_greedy_start) + "/" + str(t)
+                                + str(next_state) + "/" + str(next_state.shape[0]) + "\tsample_t/total_t: " + str(epsilon_greedy_start) + "/" + str(t)
                     print(colored(print_str, 'red'))
 
                     reward_accum_list.append(reward_accum)
@@ -422,6 +421,9 @@ def train():
                         if len(past_validation_steps_list) > 10:
                             past_validation_steps_list.popleft()
                     break
+
+            if strategy == 'validation':
+                break
 
                 
                 
@@ -459,5 +461,5 @@ def train():
 
 if __name__ == "__main__":
     train()
-    # args = parse_args()
-    # test_env(args)
+    #args = parse_args()
+    #test_env(args)
