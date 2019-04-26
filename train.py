@@ -7,8 +7,7 @@ from termcolor import colored
 from collections import deque 
 import pickle
 
-from testing import * 
-# from environment import *
+from environment import *
 from model import *
 import torch
 import torch.optim as optim
@@ -25,7 +24,7 @@ def parse_args():
     parser.add_argument("--epsilon-g", type=float, default=0.1, help="epsilon greedy")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
     parser.add_argument("--num-games", type=int, default=10, help="number of games")
-    parser.add_argument("--batch-size", type=int, default=32, help="number of games")
+    parser.add_argument("--batch-size", type=int, default=128, help="number of games")
     parser.add_argument("--save-dir", type=str, default="log", help="directory to save policy and plots")
     parser.add_argument("--save-interval", type=int, default=10, help="interval to save validation plots")
     parser.add_argument("--gamma", type=float, default=0.99, help="discount factor")
@@ -33,7 +32,8 @@ def parse_args():
     parser.add_argument("--learning-start", type=int, default=100, help="learning start after number of episodes")
     parser.add_argument("--num_target_update_iter", type=int, default=1, help="number of iterations to update target Q")
     parser.add_argument("--sample_t", type=bool, default=False, help="sample t by max")
-
+    parser.add_argument("--use-dir-info", type=bool, default=True, help="use direction information")
+    parser.add_argument("--use-heuristics", type=bool, default=True, help="use direction information")
     args = parser.parse_args()
     return args
 
@@ -45,10 +45,15 @@ class Policy:
         
         self.args = args
         self.logger = args.logger
-        dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+        self.dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 
-        self.q_func = QFunc(args).type(dtype)
-        self.target_q_func = QFunc(args).type(dtype)
+        if args.use_heuristics:
+            self.q_func = QFunc_Heuristics(args).type(self.dtype)
+            self.target_q_func = QFunc_Heuristics(args).type(self.dtype)
+        else:
+            self.q_func = QFunc(args).type(self.dtype)
+            self.target_q_func = QFunc(args).type(self.dtype)
+
         self.optimizer = optim.RMSprop(self.q_func.parameters(), lr=args.lr, alpha=args.alpha, eps=args.eps)
 
     def to_variable(self, array_in):
@@ -73,11 +78,17 @@ class Policy:
 
         # epsilon greedy
         if (strategy == "epsilon_greedy" and random.random() < self.args.epsilon_g) or strategy == 'random':
-            action = np.random.choice(state.shape[0])
+            action = np.random.choice(np.argwhere(state==1).squeeze())
             return action
 
+        # if strategy == 'validation':
+        #     print(state)
+        
         qs = self.get_Qs(state, q_func=self.q_func).detach()
         qs = self.get_data(qs)
+
+        # if strategy == 'validation':
+        #     print(qs)
 
         max_action = np.argmax(qs)
         return max_action
@@ -86,13 +97,13 @@ class Policy:
         
         i = 0
         # Locate the top layer of the tower
-        while i < len(state) and sum(state[i:i+3]) == 0:
+        while i < len(state) and np.sum(state[i:i+3]) == 0:
             i += 3
         # Break if unable to locate
         if i >= len(state):
             return None, None
         # If the top layer is filled, then we can choose any piece other than the top layer
-        if sum(state[i:i + 3]) == 3:
+        if np.sum(state[i:i + 3]) == 3:
             i += 3
         # Otherwise, we can choose any piece other than the top two layers
         else:
@@ -119,34 +130,95 @@ class Policy:
         dir_map[dir1_level] = 1
         return dir_map
 
+    def compute_heuristics(self, state):
 
-    def get_Qs(self, states, q_func):
+        zero_center_level = 0
+        one_center_level = 0
+
+        for i in range(0,len(state),3):
+
+            if state[i:i+3][1] == 0 and (state[i:i+3] != [0, 0, 0]).all():
+                if state[i:i+3][0] == 0 or state[i:i+3][1] == 0:
+                    zero_center_level += 2 * i
+                else:
+                    zero_center_level += 1 * i
+
+            if (state[i:i+3] == [0, 1, 0]).all():
+                one_center_level += 1 * (len(state)/3-i)
+
+
+        feature = np.array([zero_center_level, one_center_level])
+        return feature
+
+
+
+    def get_Qs(self, states, q_func, single = True):
 
         state_list = []
         state_mask_list = []
         state_valididx_list = []
+        feature_list = []
 
+        if single:
+            states = np.expand_dims(states, axis=0)
+ 
         for state in states:
 
-            state_ = state.reshape((-1, 3)) #[len(state_space)/3, 3]
+            state_ = state.reshape(-1, 3) #[len(state_space)/3, 3]
 
             # state_mask: 1: valid index, 0: invalid index 
             state_mask = self.get_mask(state) #[len(state_space)]
+            
+            if self.args.use_heuristics:
+                feature = self.compute_heuristics(state)
 
-            state_ = np.stack([state_, self.get_direction_info(state_)]) #[2, len(state_space)/3, 3]
+
+            if self.args.use_dir_info:
+                state_ = np.stack([state_, self.get_direction_info(state_)]) #[2, len(state_space)/3, 3]
+            else:
+                state_ = np.expand_dims(state_, axis=0).astype(float)
             state_ = np.expand_dims(state_, axis=0).astype(float) #[1, 2, len(state_space)/3, 3]
             
             state_list.append(state_)
             state_mask_list.append(state_mask)
+            if self.args.use_heuristics:
+                feature_list.append(feature) #[batch_size, 2]
 
-        states_ = np.stack(state_list, axis=0) #[batch_size, 2, len(state_space)/3, 3]
-        state_masks = np.stack(state_mask_list, axis=0) #[batch_size, len(state_space)]
-        states_var = self.to_variable(states_var)
-        Qs = q_func(states_var) # [batch_size, len(state_space)]
-        
+        states_ = np.vstack(state_list) #[batch_size, 2, len(state_space)/3, 3]
+        state_masks = np.vstack(state_mask_list) #[batch_size, len(state_space)]
+        states_var = self.to_variable(states_)
+
+        if self.args.use_heuristics:
+            features = np.vstack(feature_list) #[batch_size, 2]
+            feature_var = self.to_variable(features)
+
+        if self.args.use_heuristics:
+            Qs = q_func(states_var, feature_var) # [batch_size, len(state_space)]
+        else:
+            Qs = q_func(states_var)
+
         # renormalization
-        norm_Q = Qs/np.expand_dims(np.sum(Qs * state_masks, axis=1), axis=1) # [batch_size, len(state_space)]
-        norm_masked_Q = norm_Q * state_masks # [batch_size, len(state_space)]
+        if single:
+            
+            # print(Qs)
+            # print(torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")))
+            # print(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")))
+            # print(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))))
+            # print(Qs/torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))))
+
+            norm_Q = Qs/torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda"))) # [batch_size, len(state_space)]
+        else:
+
+            # print(Qs.shape)
+            # print(torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")).shape)
+            # print(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")).shape)
+            # print(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")), dim=1).shape)
+
+            norm_Q = Qs/torch.unsqueeze(torch.sum(Qs * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")), dim=1), dim=1) # [batch_size, len(state_space)]
+
+            # print(norm_Q.shape)
+
+        norm_masked_Q = norm_Q * torch.tensor(state_masks, dtype=torch.float).to(torch.device("cuda")) # [batch_size, len(state_space)]
 
         return norm_masked_Q
 
@@ -157,7 +229,7 @@ class Policy:
         ys = []
 
         for i in range(self.args.batch_size):
-            if is_ends[i]:
+            if is_ends[i] > 0:
                 ys.append(rewards[i])
             else:
                 qs = self.get_Qs(next_states[i], q_func=self.target_q_func).detach()
@@ -166,7 +238,7 @@ class Policy:
 
         # compute Q
         loss = 0
-        Qs = self.get_Qs(states, q_func=self.q_func)
+        Qs = self.get_Qs(states, single=False, q_func=self.q_func)
         ys_var = self.to_variable(np.array(ys)).view(-1, 1)
         loss = torch.sum((Qs - ys_var) ** 2) / self.args.batch_size
 
@@ -283,48 +355,10 @@ class ReplayBuffer:
         indices = np.random.choice(self.get_size(), num_samples, replace=False)
         sampled_states = [self.state_list[i] for i in indices]
         sampled_actions = [self.action_list[i] for i in indices]
-        sampled_next_state = [self.state_list[self.rel_index(i + 1)] if not self.is_end_list[i] else None for i in indices]
+        sampled_next_state = [self.state_list[self.rel_index(i + 1)] if self.is_end_list[i]==0 else None for i in indices]
         sampled_rewards = [self.reward_list[i] for i in indices]
         sampled_is_end = [self.is_end_list[i] for i in indices]
         return [sampled_states, sampled_actions, sampled_next_state, sampled_rewards, sampled_is_end]
-
-
-# def test_policy():
-#     args = parse_args()
-#     args.logger = Logger(args)
-#     policy = Policy(args)
-#     replay_buffer = ReplayBuffer(args)
-
-#     for i in range(2):
-#         # create some sample state, next piece
-#         next_piece = random.randint(0, 6)
-#         field = np.zeros((rows + 4, cols))
-#         field = field > 0
-#         is_end = False
-#         rows_cleared = 0
-#         state = [field, next_piece]
-
-#         # select action
-#         action = policy.take_action(state)
-
-#         # store transition
-#         replay_buffer.add(state, action, rows_cleared, is_end)
-
-
-# def test_replay_buffer():
-#     args = parse_args()
-#     args.logger = Logger(args)
-#     replay_buffer = ReplayBuffer(args)
-
-#     for game in range(100):
-#         for t in range(50):
-#             field = np.zeros((rows, cols))
-#             state = [field, 0]
-#             action = [0, 0]
-#             rows_cleared = 0
-#             is_end = True if t == 49 else False
-#             replay_buffer.add(state, action, rows_cleared, is_end)
-
 
 def train():
 
@@ -333,6 +367,9 @@ def train():
     policy = Policy(args)
     replay_buffer = ReplayBuffer(args)
     env = JengaEnv(args)
+
+    max_avg_reward = 0
+    max_t = 0
 
     for episode in range(args.num_episodes):
 
@@ -346,10 +383,11 @@ def train():
 
         # collect data
         reward_accum_list = []
-        max_avg_reward = 0
         past_validation_steps_list = deque([])
+        max_height = args.init_height * 3
 
         for game in range(args.num_games):
+
 
             env.reset()
             reward_accum = 0
@@ -368,22 +406,28 @@ def train():
 
                 if (strategy == "epsilon_greedy" and t < epsilon_greedy_start) or (strategy == "validation"):
                     action = policy.take_action(state, "validation")
+                    print(action)
                 else:
                     action = policy.take_action(state, strategy)
+                    
+
 
                 next_state, is_end = env.step(action)
-                reward = env.test_get_reward(next_state, is_end)
+                reward = env.get_reward(next_state, is_end, t)
                 reward_accum += reward
 
                 if strategy == "random" or (strategy == "epsilon_greedy" and t >= epsilon_greedy_start):
                     replay_buffer.add(state, action, reward, is_end)
 
-                if is_end:
+                if is_end > 0:
+                    max_height = max(max_height, next_state.shape[0] - np.argwhere(next_state==1).squeeze()[0])
+                    max_t = max(max_t, t)
                     print_str = "=" * 20 + " Episode " + str(episode) + "\tGame " + str(game) + " " + strategy + " " + "=" * 20 + " curr_height/max_height: " \
-                                + str(np.argwhere(new_state==1)) + "/" + str(new_state.shape[0]) + "\tsample_t/total_t: " + str(epsilon_greedy_start) + "/" + str(t)
+                                + str(max_height) + "/" + str(next_state.shape[0]) + "\tcurr_t/max_t: " + str(t) + "/" + str(max_t)
                     print(colored(print_str, 'red'))
 
                     reward_accum_list.append(reward_accum)
+                    
 
                     if strategy == "validation":
                         past_validation_steps_list.append(t)
@@ -391,11 +435,14 @@ def train():
                             past_validation_steps_list.popleft()
                     break
 
+            if strategy == 'validation':
+                break
+
+                
+                
+                
+
         if strategy == "validation":
-            if np.average(reward_list) > max_avg_reward:
-                print("saving new best policy")
-                policy.save_params()
-                max_avg_reward = np.average(reward_list)
             policy.save_params(episode)
 
         if strategy != "random":
@@ -426,4 +473,6 @@ def train():
 
 
 if __name__ == "__main__":
-	train()
+    train()
+    #args = parse_args()
+    #test_env(args)
