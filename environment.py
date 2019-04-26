@@ -82,8 +82,6 @@ class JengaEnv(object):
             else:
                 level_pos[-1].append([1, x])
 
-        # print(level_pos)
-
         # the prefix sum of the mass higher or equal to current level of the tower
         # larger index -> bottom
         # smaller index -> top
@@ -111,10 +109,6 @@ class JengaEnv(object):
                 level_mass.append(level_mass[-1] + np.sum(np.array(level[1:]), axis=0))
                 level_block_cnt.append(level_block_cnt[-1] + len(level[1:]))
 
-        # print(level_mass)
-        # print(level_block_cnt)
-        # print(level_mass_centroid)
-
         for i in range(len(level_block_cnt)):
             level_mass_centroid.append(level_mass[i]/level_block_cnt[i])
 
@@ -124,32 +118,13 @@ class JengaEnv(object):
             cx, cy = level_mass_centroid[i]
             level = level_pos[::-1][i+1]
 
-            # print(cy)
-            # print(cx)
-            # print(level)
-
-            
             # CASE I: the centroid above the current level lying on one block of current level
             if level[0]%2 == 0:
-                # print(np.amax(np.array(level[1:]), axis=0)[0])
-                # print(np.amin(np.array(level[1:]), axis=0)[0])
                 if cx > np.amax(np.array(level[1:]), axis=0)[0] + 0.5 or cx < np.amin(np.array(level[1:]), axis=0)[0] - 0.5:
                     return True
             else:
-                # print(np.amax(np.array(level[1:]), axis=0)[1])
-                # print(np.amin(np.array(level[1:]), axis=0)[1])
                 if cy > np.amax(np.array(level[1:]), axis=0)[1] + 0.5 or cy < np.amin(np.array(level[1:]), axis=0)[1] - 0.5:
                     return True
-
-            # # CASE II: the centroid above the current level lying on the centroid of current level though there is no block below it
-            # dy, dx = np.sum(np.array(level[1:]), axis=0)/len(level[1:])
-            # print(dy)
-            # print(dx)
-            # print(cy)
-            # print(cx)
-            # print('=====')
-            # if abs(dy-cy) < 1 and abs(cx-dx) < 1:
-            #     return False
 
         return False
 
@@ -161,21 +136,6 @@ class JengaEnv(object):
         
 
     def get_reward(self, state, is_end, t):
-        
-        # mask = [0,1,0]
-        # reward = 0
-        
-
-        # if is_end == 0:
-            
-        #     reward += 5
-        #     for i in range(0,len(state),3):
-        #         if (mask==state[i:i+3]).all(): reward += 2
-
-        # elif is_end == 1:
-        #     reward += self.reward
-        # else:
-        #     reward += self.cost
 
         mask_pos = [0,1,0]
         mask_neg = [1,0,1]
@@ -204,7 +164,5 @@ def test_env(args):
         if is_end:
             break
 
-        # print(state.reshape(-1, 3))
         action = np.random.choice(np.argwhere(state==1).squeeze())
-        # print(action)
         state, is_end = env.step(action)

@@ -360,44 +360,6 @@ class ReplayBuffer:
         sampled_is_end = [self.is_end_list[i] for i in indices]
         return [sampled_states, sampled_actions, sampled_next_state, sampled_rewards, sampled_is_end]
 
-
-# def test_policy():
-#     args = parse_args()
-#     args.logger = Logger(args)
-#     policy = Policy(args)
-#     replay_buffer = ReplayBuffer(args)
-
-#     for i in range(2):
-#         # create some sample state, next piece
-#         next_piece = random.randint(0, 6)
-#         field = np.zeros((rows + 4, cols))
-#         field = field > 0
-#         is_end = False
-#         rows_cleared = 0
-#         state = [field, next_piece]
-
-#         # select action
-#         action = policy.take_action(state)
-
-#         # store transition
-#         replay_buffer.add(state, action, rows_cleared, is_end)
-
-
-# def test_replay_buffer():
-#     args = parse_args()
-#     args.logger = Logger(args)
-#     replay_buffer = ReplayBuffer(args)
-
-#     for game in range(100):
-#         for t in range(50):
-#             field = np.zeros((rows, cols))
-#             state = [field, 0]
-#             action = [0, 0]
-#             rows_cleared = 0
-#             is_end = True if t == 49 else False
-#             replay_buffer.add(state, action, rows_cleared, is_end)
-
-
 def train():
 
     args = parse_args()
