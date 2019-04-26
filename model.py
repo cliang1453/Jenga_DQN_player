@@ -8,16 +8,22 @@ class QFunc(nn.Module):
     def __init__(self, args):
         super(QFunc, self).__init__()
 
-        if args.use_dir_info:
-            self.conv1 = nn.Conv2d(2, 64, kernel_size=(2, 3), stride=1, padding=(0, 2))
+        h = (args.init_height*3-2)
+        if args.init_height == 5:
+            sc = 1
         else:
-            self.conv1 = nn.Conv2d(1, 64, kernel_size=(2, 3), stride=1, padding=(0, 2))
+            sc = min(2, h/5*0.7)
 
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=(2, 3), stride=1, padding=(0, 1))
+        if args.use_dir_info:
+            self.conv1 = nn.Conv2d(2, int(64 * sc), kernel_size=(2, 3), stride=1, padding=(0, 2))
+        else:
+            self.conv1 = nn.Conv2d(1, int(64 * sc), kernel_size=(2, 3), stride=1, padding=(0, 2))
 
-        self.conv3 = nn.Conv2d(128, 512, kernel_size=3, stride=1)
-        self.fc4 = nn.Linear((args.init_height*3-2-4)*3*512, (args.init_height*3-2)*64)
-        self.fc5 = nn.Linear((args.init_height*3-2)*64, (args.init_height*3-2)*3)
+        self.conv2 = nn.Conv2d(int(64 * sc), int(128 * sc), kernel_size=(2, 3), stride=1, padding=(0, 1))
+
+        self.conv3 = nn.Conv2d(int(128 * sc), int(512 * sc), kernel_size=3, stride=1)
+        self.fc4 = nn.Linear(int((h-4) * 3 * 512 * sc), h*64)
+        self.fc5 = nn.Linear(h*64, h*3)
 
     def forward(self, x):
         # print(x.shape)
@@ -34,19 +40,25 @@ class QFunc_Heuristics(nn.Module):
     def __init__(self, args):
         super(QFunc_Heuristics, self).__init__()
 
-        if args.use_dir_info:
-            self.conv1 = nn.Conv2d(2, 64, kernel_size=(2, 3), stride=1, padding=(0, 2))
+        h = (args.init_height*3-2)
+        if args.init_height == 5:
+            sc = 1
         else:
-            self.conv1 = nn.Conv2d(1, 64, kernel_size=(2, 3), stride=1, padding=(0, 2))
+            sc = min(2, h/5*0.7)
 
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=(2, 3), stride=1, padding=(0, 1))
+        if args.use_dir_info:
+            self.conv1 = nn.Conv2d(2, int(64 * sc), kernel_size=(2, 3), stride=1, padding=(0, 2))
+        else:
+            self.conv1 = nn.Conv2d(1, int(64 * sc), kernel_size=(2, 3), stride=1, padding=(0, 2))
 
-        self.conv3 = nn.Conv2d(128, 512, kernel_size=3, stride=1)
+        self.conv2 = nn.Conv2d(int(64 * sc), int(128 * sc), kernel_size=(2, 3), stride=1, padding=(0, 1))
+
+        self.conv3 = nn.Conv2d(int(128 * sc), int(512 * sc), kernel_size=3, stride=1)
         
-        self.fc4 = nn.Linear((args.init_height*3-2-4)*3*512, (args.init_height*3-2)*64)
-        self.fc_f = nn.Linear(NUM_FEATURES, (args.init_height*3-2)*64)
+        self.fc4 = nn.Linear(int((h-4) * 3 * 512 * sc), h*64)
+        self.fc_f = nn.Linear(NUM_FEATURES, h*64)
 
-        self.fc5 = nn.Linear((args.init_height*3-2)*128, (args.init_height*3-2)*3)
+        self.fc5 = nn.Linear(h*128, h*3)
 
 
     def forward(self, x, feature):
